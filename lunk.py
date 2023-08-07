@@ -8,6 +8,7 @@ import gradio as gr
 import numpy as np
 import random
 from sys import argv
+from tqdm import tqdm
 
 # This should be a gradio numerical input, but I don't know gradio and this is an MVP
 num_times_to_lunk = int(argv[1])
@@ -69,6 +70,7 @@ def read_index_filenames(sourcedir):
     index = json.load(open(sourcedir + '/pytorch_model.bin.index.json', 'rt'))
     fl = [v for _, v in index['weight_map'].items()]
     return fl
+
 def merge_models_and_save(model_path1, model_path2, model_path3=None):
     if not model_path1 or not model_path2:
         return "\nYou must select two directories containing models to merge and one output directory. Exiting."
@@ -79,29 +81,37 @@ def merge_models_and_save(model_path1, model_path2, model_path3=None):
             torch.set_default_dtype(torch.float32)
         device = torch.device("cuda") if (torch.cuda.is_available() and not force_cpu) else torch.device("cpu")
 
-        print("Loading Model 1...")
-        model1 = AutoModelForCausalLM.from_pretrained(model_path1, torch_dtype='auto', low_cpu_mem_usage=True) #,torch_dtype=torch.float16
-        model1 = model1.to(device)
-        model1.eval()
-        print("Model 1 Loaded. Dtype: " + str(model1.dtype))
-        print("Loading Model 2...")
-        model2 = AutoModelForCausalLM.from_pretrained(model_path2, torch_dtype='auto', low_cpu_mem_usage=True) #,torch_dtype=torch.float16
-        model2 = model2.to(device)
-        model2.eval()
-        print("Model 2 Loaded. Dtype: " + str(model2.dtype))
-        m1_info = get_model_info(model1)
-        m2_info = get_model_info(model2)
-        print("LUNKing models...")
-        merge_models(model1, model2, blend_ratio)  # Pass the blend_ratio to merge_models function
-        if model_path3:
-            print("Saving new model...")
-            newsavedpath = model_path3+"/converted_model"
-            if always_output_fp16 and not fp16:
-                model1.half()
-            model1.save_pretrained(newsavedpath, max_shard_size=max_shard_size)
-            print("\nSaved to: " + newsavedpath)
-        else:
-            print("\nOutput model was not saved as no output path was selected.")
+        # Why is the for loop above the model loading code? Because the merge code mutates model 1, so we need to clear it and load it again for each iteration of the loop
+        for n in tqdm(range(num_times_to_lunk)): # note: num_times_to_lunk is extracted from sys.argv earlier in the script
+            print("Loading Model 1...")
+            model1 = AutoModelForCausalLM.from_pretrained(model_path1, torch_dtype='auto', low_cpu_mem_usage=True) #,torch_dtype=torch.float16
+            model1 = model1.to(device)
+            model1.eval()
+            print("Model 1 Loaded. Dtype: " + str(model1.dtype))
+            print("Loading Model 2...")
+            model2 = AutoModelForCausalLM.from_pretrained(model_path2, torch_dtype='auto', low_cpu_mem_usage=True) #,torch_dtype=torch.float16
+            model2 = model2.to(device)
+            model2.eval()
+            print("Model 2 Loaded. Dtype: " + str(model2.dtype))
+            m1_info = get_model_info(model1)
+            m2_info = get_model_info(model2)
+            print("LUNKing models...")
+            merge_models(model1, model2, blend_ratio)  # Pass the blend_ratio to merge_models function
+            if model_path3:
+                print("Saving new model...")
+                newsavedpath = model_path3+f"/converted_model_{str(n)}"
+                if always_output_fp16 and not fp16:
+                    model1.half()
+                model1.save_pretrained(newsavedpath, max_shard_size=max_shard_size)
+                print("\nSaved to: " + newsavedpath)
+                # at this point, a bash command should be used to evaluate the model against the benchmark (run main.py in lm-evaluation-harness) and wait until it finishes and outputs its results to a file: ./{n}_results.json. The "waiting until it finishes" could be accomplished by checking if a file with the correct name exists every certain number of seconds, or it can be accomplished in a more clever way using libraries.
+                cmd = f"python main.py --model hf-causal-experimental --model_args pretrained=EleutherAI/pythia-160m,revision=step100000 \ --tasks arc_challenge,hellaswag,truthfulqa --device cuda:0"
+                if os.path.exists(model_path3+f"/converted_model_{str(n - 1)}"): # this line, or some modification of it, should be used to check if there is another version of the model to check against
+                    pass # this here should check if the average of the accuracy of the results of the previous model are better than the current one, and if so, delete the current one and rename the previous one to have the current one's name
+                    # else, the previous one is deleted
+            else:
+                print("\nOutput model was not saved as no output path was selected.")
+                break
 
         print("\nScript Completed.")
 
@@ -127,3 +137,9 @@ iface = gr.Interface(
 )
 
 iface.launch()
+
+
+cmd = f"python main.py --model hf-causal-experimental \
+--model_args pretrained=EleutherAI/pythia-160m,revision=step100000 \
+--tasks arc hellaswag,truthfulqa, \
+--device cuda:0"
