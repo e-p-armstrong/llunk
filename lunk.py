@@ -1,6 +1,7 @@
 print("Starting LLUNK(Large Looping Universal Neural Kombiner), please wait...")
 # Credit for original script goes to GJMorgan(LordGoonery) on Discord
 
+from lm_evaluation_harness.evaluate_model import evaluate_model
 import torch, shutil, json, concurrent.futures, sys
 from transformers import AutoModelForCausalLM, AutoTokenizer, AutoModel
 import psutil, os
@@ -96,7 +97,7 @@ def merge_models_and_save(model_path1, model_path2, model_path3=None):
             m1_info = get_model_info(model1)
             m2_info = get_model_info(model2)
             print("LUNKing models...")
-            merge_models(model1, model2, blend_ratio)  # Pass the blend_ratio to merge_models function
+            merge_models(model1, model2, blend_ratio)  # Passes the blend_ratio to merge_models function
             if model_path3:
                 print("Saving new model...")
                 newsavedpath = model_path3+f"/converted_model_{str(n)}"
@@ -105,13 +106,14 @@ def merge_models_and_save(model_path1, model_path2, model_path3=None):
                 model1.save_pretrained(newsavedpath, max_shard_size=max_shard_size)
                 print("\nSaved to: " + newsavedpath)
                 # at this point, a bash command should be used to evaluate the model against the benchmark (run main.py in lm-evaluation-harness) and wait until it finishes and outputs its results to a file: ./{n}_results.json. The "waiting until it finishes" could be accomplished by checking if a file with the correct name exists every certain number of seconds, or it can be accomplished in a more clever way using libraries.
-                cmd = f"python main.py --model hf-causal-experimental --model_args pretrained=EleutherAI/pythia-160m,revision=step100000 \ --tasks arc_challenge,hellaswag,truthfulqa --device cuda:0"
+                evaluate_model(model="hf-causal-experimental",model_args=f"pretrained=../{newsavedpath}",tasks="hellaswag",device="cuda:0") # note that newsavedpath is relative to the script this function is in; the function being executed, however, is one directory below this function's file
+                # "python ./lm-evaluation-harness/main.py --model hf-causal-experimental --model_args pretrained=../{newsavedpath} --tasks hellaswag --device cuda:0"
                 if os.path.exists(model_path3+f"/converted_model_{str(n - 1)}"): # this line, or some modification of it, should be used to check if there is another version of the model to check against
                     pass # this here should check if the average of the accuracy of the results of the previous model are better than the current one, and if so, delete the current one and rename the previous one to have the current one's name
                     # else, the previous one is deleted
             else:
                 print("\nOutput model was not saved as no output path was selected.")
-                break
+                break # no need to save multiple models if no path is specified
 
         print("\nScript Completed.")
 
