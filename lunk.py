@@ -10,6 +10,8 @@ import numpy as np
 import random
 from sys import argv
 from tqdm import tqdm
+import os
+import shutil
 
 # This should be a gradio numerical input, but I don't know gradio and this is an MVP
 num_times_to_lunk = int(argv[1])
@@ -105,8 +107,37 @@ def merge_models_and_save(model_path1, model_path2, model_path3=None):
                     model1.half()
                 model1.save_pretrained(newsavedpath, max_shard_size=max_shard_size)
                 print("\nSaved to: " + newsavedpath)
-                # at this point, a bash command should be used to evaluate the model against the benchmark (run main.py in lm-evaluation-harness) and wait until it finishes and outputs its results to a file: ./{n}_results.json. The "waiting until it finishes" could be accomplished by checking if a file with the correct name exists every certain number of seconds, or it can be accomplished in a more clever way using libraries.
-                evaluate_model(model="hf-causal-experimental",model_args=f"pretrained=../{newsavedpath}",tasks="hellaswag",device="cuda:0") # note that newsavedpath is relative to the script this function is in; the function being executed, however, is one directory below this function's file
+                # the following line will output the evaluation results to a file: ./{n}_results.json. 
+                results = evaluate_model(model="hf-causal-experimental",model_args=f"pretrained=../{newsavedpath}",tasks="hellaswag",device="cuda:0") # note that newsavedpath is relative to the script this function is in; the function being executed, however, is one directory below this function's file
+                # Here is a docstring that shows the output of evaluate_model, so that you know how to access the accuracy so that you can average across all the tasks. You need to iterate over all the tasks in the "results" dictionary because there can be more tasks there, each with their own accuracy, which needs to be averaged.
+                """
+{
+  "results": {
+    "hellaswag": {
+      "acc": 0.2874925313682533,
+      "acc_stderr": 0.00451668195387907,
+      "acc_norm": 0.30850428201553476,
+      "acc_norm_stderr": 0.004609320024893888
+    }
+  },
+  "versions": {
+    "hellaswag": 0
+  },
+  "config": {
+    "model": "hf-causal-experimental",
+    "model_args": "pretrained=EleutherAI/pythia-160m,revision=step100000",
+    "num_fewshot": 0,
+    "batch_size": null,
+    "batch_sizes": [],
+    "device": "cuda:0",
+    "no_cache": false,
+    "limit": null,
+    "bootstrap_iters": 100000,
+    "description_dict": {}
+  }
+}
+"""
+
                 # "python ./lm-evaluation-harness/main.py --model hf-causal-experimental --model_args pretrained=../{newsavedpath} --tasks hellaswag --device cuda:0"
                 if os.path.exists(model_path3+f"/converted_model_{str(n - 1)}"): # this line, or some modification of it, should be used to check if there is another version of the model to check against
                     pass # this here should check if the average of the accuracy of the results of the previous model are better than the current one, and if so, delete the current one and rename the previous one to have the current one's name

@@ -82,3 +82,4 @@ def evaluate_model(model=None, model_args="", tasks=None, provide_description=Fa
             f.write(dumped)
     else:
         print("WARNING: results not saved anywhere, specify an output path with --output_path")
+    return dumped
