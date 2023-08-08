@@ -74,9 +74,23 @@ def read_index_filenames(sourcedir):
     fl = [v for _, v in index['weight_map'].items()]
     return fl
 
-def merge_models_and_save(model_path1, model_path2, model_path3=None):
+def clear_lm_cache():
+    import os, shutil
+    folder = './lm_cache'
+    for filename in os.listdir(folder):
+        file_path = os.path.join(folder, filename)
+        try:
+            if os.path.isfile(file_path) or os.path.islink(file_path):
+                os.unlink(file_path)
+            elif os.path.isdir(file_path):
+                shutil.rmtree(file_path)
+        except Exception as e:
+            print('Failed to delete %s. Reason: %s' % (file_path, e))
+
+def merge_models_and_save(model_path1, model_path2):
     if not model_path1 or not model_path2:
         return "\nYou must select two directories containing models to merge and one output directory. Exiting."
+    prev_avg_acc = 0
     with torch.no_grad():
         if fp16:
             torch.set_default_dtype(torch.float16)
@@ -84,76 +98,53 @@ def merge_models_and_save(model_path1, model_path2, model_path3=None):
             torch.set_default_dtype(torch.float32)
         device = torch.device("cuda") if (torch.cuda.is_available() and not force_cpu) else torch.device("cpu")
 
-        # Why is the for loop above the model loading code? Because the merge code mutates model 1, so we need to clear it and load it again for each iteration of the loop
-        for n in tqdm(range(num_times_to_lunk)): # note: num_times_to_lunk is extracted from sys.argv earlier in the script
+        for n in tqdm(range(num_times_to_lunk)):
+            clear_lm_cache()
+            print("Loading Tokenizer...") # since both models have the same architecture they should probably have the same tokenizer... we use model 1's tokenizer
+            tokenizer = AutoTokenizer.from_pretrained(model_path1)
             print("Loading Model 1...")
-            model1 = AutoModelForCausalLM.from_pretrained(model_path1, torch_dtype='auto', low_cpu_mem_usage=True) #,torch_dtype=torch.float16
+            model1 = AutoModelForCausalLM.from_pretrained(model_path1, torch_dtype='auto', low_cpu_mem_usage=True)
             model1 = model1.to(device)
             model1.eval()
             print("Model 1 Loaded. Dtype: " + str(model1.dtype))
             print("Loading Model 2...")
-            model2 = AutoModelForCausalLM.from_pretrained(model_path2, torch_dtype='auto', low_cpu_mem_usage=True) #,torch_dtype=torch.float16
+            model2 = AutoModelForCausalLM.from_pretrained(model_path2, torch_dtype='auto', low_cpu_mem_usage=True)
             model2 = model2.to(device)
             model2.eval()
             print("Model 2 Loaded. Dtype: " + str(model2.dtype))
             m1_info = get_model_info(model1)
             m2_info = get_model_info(model2)
             print("LUNKing models...")
-            merge_models(model1, model2, blend_ratio)  # Passes the blend_ratio to merge_models function
-            if model_path3:
-                print("Saving new model...")
-                newsavedpath = model_path3+f"/converted_model_{str(n)}"
-                if always_output_fp16 and not fp16:
-                    model1.half()
-                model1.save_pretrained(newsavedpath, max_shard_size=max_shard_size)
-                print("\nSaved to: " + newsavedpath)
-                # the following line will output the evaluation results to a file: ./{n}_results.json. 
-                results = evaluate_model(model="hf-causal-experimental",model_args=f"pretrained=../{newsavedpath}",tasks="hellaswag",device="cuda:0") # note that newsavedpath is relative to the script this function is in; the function being executed, however, is one directory below this function's file
-                # Here is a docstring that shows the output of evaluate_model, so that you know how to access the accuracy so that you can average across all the tasks. You need to iterate over all the tasks in the "results" dictionary because there can be more tasks there, each with their own accuracy, which needs to be averaged.
-                """
-{
-  "results": {
-    "hellaswag": {
-      "acc": 0.2874925313682533,
-      "acc_stderr": 0.00451668195387907,
-      "acc_norm": 0.30850428201553476,
-      "acc_norm_stderr": 0.004609320024893888
-    }
-  },
-  "versions": {
-    "hellaswag": 0
-  },
-  "config": {
-    "model": "hf-causal-experimental",
-    "model_args": "pretrained=EleutherAI/pythia-160m,revision=step100000",
-    "num_fewshot": 0,
-    "batch_size": null,
-    "batch_sizes": [],
-    "device": "cuda:0",
-    "no_cache": false,
-    "limit": null,
-    "bootstrap_iters": 100000,
-    "description_dict": {}
-  }
-}
-"""
+            merge_models(model1, model2, blend_ratio)
+            print("Saving new model...")
+            newsavedpath = f"./converted_model_{str(n)}"
+            if always_output_fp16 and not fp16:
+                model1.half()
+            model1.save_pretrained(newsavedpath, max_shard_size=max_shard_size)
+            tokenizer.save_pretrained(newsavedpath)
+            print("\nSaved to: " + newsavedpath)
+            results = evaluate_model(model="hf-causal-experimental",model_args=f"pretrained={newsavedpath}",tasks="hellaswag",device="cuda:0")
+            avg_acc = np.mean([task['acc'] for task in results['results'].values()])
 
-                # "python ./lm-evaluation-harness/main.py --model hf-causal-experimental --model_args pretrained=../{newsavedpath} --tasks hellaswag --device cuda:0"
-                if os.path.exists(model_path3+f"/converted_model_{str(n - 1)}"): # this line, or some modification of it, should be used to check if there is another version of the model to check against
-                    pass # this here should check if the average of the accuracy of the results of the previous model are better than the current one, and if so, delete the current one and rename the previous one to have the current one's name
-                    # else, the previous one is deleted
-            else:
-                print("\nOutput model was not saved as no output path was selected.")
-                break # no need to save multiple models if no path is specified
+            if n > 0:
+                prev_model_path = "." + f"/converted_model_{str(n - 1)}"
+                if prev_avg_acc > avg_acc:
+                    os.rmdir(newsavedpath)
+                    os.rename(prev_model_path, newsavedpath)
+                else:
+                    shutil.rmtree(prev_model_path)
+            prev_avg_acc = avg_acc
 
         print("\nScript Completed.")
 
 current_directory = os.getcwd()
 
-def interface(input_text1, input_text2,input_text3, blend_ratio_slider):  # Add the blend_ratio_slider parameter
+
+
+def interface(input_text1, input_text2, blend_ratio_slider):  # Add the blend_ratio_slider parameter
     global blend_ratio
     blend_ratio = blend_ratio_slider  # Update the blend_ratio global variable
-    merge_models_and_save(input_text1, input_text2, input_text3)
+    merge_models_and_save(input_text1, input_text2)
     return "Success! Models have been LUNKed."
 
 iface = gr.Interface(
@@ -161,7 +152,6 @@ iface = gr.Interface(
     inputs=[
         gr.inputs.Dropdown(choices=os.listdir(current_directory), label="FIRST model directory"),
         gr.inputs.Dropdown(choices=os.listdir(current_directory), label="SECOND model directory"),
-        gr.inputs.Dropdown(choices=os.listdir(current_directory), label="OUTPUT model directory"),
         gr.inputs.Slider(minimum=0, maximum=1, step=0.01, default=0.5, label="Blend Ratio")
     ],
     outputs="text",

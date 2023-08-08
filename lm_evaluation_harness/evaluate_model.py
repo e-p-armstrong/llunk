@@ -3,7 +3,8 @@ import json
 import logging
 import os
 
-from lm_eval import tasks, evaluator, utils
+from lm_eval import evaluator, utils
+from lm_eval import tasks as eval_tasks
 
 logging.getLogger("openai").setLevel(logging.WARNING)
 
@@ -35,51 +36,52 @@ logging.getLogger("openai").setLevel(logging.WARNING)
 
 
 def evaluate_model(model=None, model_args="", tasks=None, provide_description=False, num_fewshot=0, batch_size=None, max_batch_size=None, device=None, output_path=None, limit=None, data_sampling=None, no_cache=False, decontamination_ngrams_path=None, description_dict_path=None, check_integrity=False, write_out=False, output_base_path=None):
-    args = parse_args()
+    # args = parse_args()
 
-    assert not args.provide_description  # not implemented
+    # if limit:
+    #     print(
+    #         "WARNING: --limit SHOULD ONLY BE USED FOR TESTING. REAL METRICS SHOULD NOT BE COMPUTED USING LIMIT."
+    #     )
 
-    if args.limit:
-        print(
-            "WARNING: --limit SHOULD ONLY BE USED FOR TESTING. REAL METRICS SHOULD NOT BE COMPUTED USING LIMIT."
-        )
-
-    if args.tasks is None:
-        task_names = tasks.ALL_TASKS
-    else:
-        task_names = utils.pattern_match(args.tasks.split(","), tasks.ALL_TASKS)
+    # if tasks is None:
+    #     task_names = tasks.ALL_TASKS
+    # else:
+    task_names = utils.pattern_match(tasks.split(","), eval_tasks.ALL_TASKS)
+    print("\n\n\n====================")
+    print(os.getcwd())
+    print("\n\n\n====================")
 
     print(f"Selected Tasks: {task_names}")
 
     description_dict = {}
-    if args.description_dict_path:
-        with open(args.description_dict_path, "r") as f:
+    if description_dict_path:
+        with open(description_dict_path, "r") as f:
             description_dict = json.load(f)
 
     results = evaluator.simple_evaluate(
-        model=args.model,
-        model_args=args.model_args,
+        model=model,
+        model_args=model_args,
         tasks=task_names,
-        num_fewshot=args.num_fewshot,
-        batch_size=args.batch_size,
-        max_batch_size=args.max_batch_size,
-        device=args.device,
-        no_cache=args.no_cache,
-        limit=args.limit,
+        num_fewshot=num_fewshot,
+        batch_size=batch_size,
+        max_batch_size=max_batch_size,
+        device=device,
+        no_cache=no_cache,
+        limit=limit,
         description_dict=description_dict,
-        decontamination_ngrams_path=args.decontamination_ngrams_path,
-        check_integrity=args.check_integrity,
-        write_out=args.write_out,
-        output_base_path=args.output_base_path,
+        decontamination_ngrams_path=decontamination_ngrams_path,
+        check_integrity=check_integrity,
+        write_out=write_out,
+        output_base_path=output_base_path,
     )
 
     dumped = json.dumps(results, indent=2)
     print(dumped)
 
-    if args.output_path:
-        os.makedirs(os.path.dirname(args.output_path), exist_ok=True)
-        with open(args.output_path, "w") as f:
+    if output_path:
+        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+        with open(output_path, "w") as f:
             f.write(dumped)
     else:
-        print("WARNING: results not saved anywhere, specify an output path with --output_path")
-    return dumped
+        print("WARNING: accuracy results not saved anywhere, specify an output path with --output_path")
+    return results
