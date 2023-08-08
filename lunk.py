@@ -123,7 +123,7 @@ def merge_models_and_save(model_path1, model_path2):
             model1.save_pretrained(newsavedpath, max_shard_size=max_shard_size)
             tokenizer.save_pretrained(newsavedpath)
             print("\nSaved to: " + newsavedpath)
-            results = evaluate_model(model="hf-causal-experimental",model_args=f"pretrained={newsavedpath}",tasks="hellaswag",device="cuda:0")
+            results = evaluate_model(model="hf-causal-experimental",model_args=f"pretrained={newsavedpath}",tasks="hellaswag,hendrycksTest-human_sexuality,hendrycksTest-formal_logic",device="cuda:0")
             avg_acc = np.mean([task['acc'] for task in results['results'].values()])
 
             if n > 0:
