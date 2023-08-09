@@ -1,11 +1,11 @@
 # Lunk but looped
 
-This is an extremely rough MVP hack of the  LUNK script written by (authorname I forget). 
+This is an extremely rough MVP hack of the  LUNK script written by Caleb Morgan. 
 
 ## Thought process
 The basic idea of LUNK is that instead of simply merging all the weights of two models with the same architecture using a certain blend ratio, iterating through every parameter in the model and having a chance of the parameter being merged or not can better preserve the distinct qualities and characteristics of both models, if you're lucky. But this approach has a problem: since there's a random chance of the parameters being merged or not, you need to be quite fortunate to create a great model from a merge, like Hugin.
 
-What's one way to deal with bad luck? Try again until you get good luck! 
+What's one way to deal with bad luck? Try again until you get good luck! It works for gambling so why not here too
 
 ## What this does
 
@@ -16,15 +16,16 @@ This ungodly, ugly hack takes the eleuther AI evaluation harness, the lunk scrip
 run
 
 ```
-python lunk.py 2
+python lunk.py num_lunks_to_generate path_to_model_1 path_to_model_2 blend_ratio
 ```
-
-To start up the Gradio UI. `2` means that you are going to create 2 lunks and pick the best one; you can change this to any number you want.
-To install packages, you might want to create a new virtual environment and install python 3.9, then cd into TODO !EA add dirname and type `pip install .` to install all the many packages required by the eleuther harness.
+so for instance
+```
+python lunk.py 2 pythia-410m pythia-410m 0.5
+```
+works as a kind-of "identity" test of the pipeline.
 
 This script is basically untested (I only tested that it does, in fact, loop properly, by merging a model into itself) and comes with a number of limitations, as it is an mvp:
 
-1. **Mishmash of command line arguments and Gradio.** I don't know Gradio, so the number of times to lunk is currently supplied by sys.argv in lunk.py
 2. **Bit tricky to change the tests used.** You need to go into lunk.py and change the arguments to the evaluate_model function to a string of the following format: "test1,test2,test3,test4". This should obviously be done from Gradio instead, but, mvp.
 3. **Very specific requirements for directory structure.** I was in a rush to get this working and so stripped out a fair bit of customization. The model you're outputting to will now always be in the same directory as the lunk.py script. The directory structure of the repo must generally be well preserved unless you know what you're doing. converted_model_{somenumber} will be the one you want, after the script finishes
 4. **Sharp edges everywhere.** This was crudely adapted within the space of a single day by someone who barely knew what they were doing (me) and so is both unpolished and untested
