@@ -15,9 +15,12 @@ import shutil
 
 # This should be a gradio numerical input, but I don't know gradio and this is an MVP
 num_times_to_lunk = int(argv[1])
+path_to_model_1 = argv[2]
+path_to_model_2 = argv[3]
+blend_ratio = float(argv[4])
 
 
-blend_ratio, fp16, always_output_fp16, max_shard_size, verbose_info, force_cpu, load_sharded = 0.5, False, True, "2000MiB", True, True, True
+fp16, always_output_fp16, max_shard_size, verbose_info, force_cpu, load_sharded = False, True, "2000MiB", True, True, True
 test_prompt, test_max_length = "Test, ", 32
 blend_ratio_b = 1.0 - blend_ratio
 def get_cpu_threads():
@@ -129,7 +132,7 @@ def merge_models_and_save(model_path1, model_path2):
             if n > 0:
                 prev_model_path = "." + f"/converted_model_{str(n - 1)}"
                 if prev_avg_acc > avg_acc:
-                    os.rmdir(newsavedpath)
+                    shutil.rmtree(newsavedpath)
                     os.rename(prev_model_path, newsavedpath)
                 else:
                     shutil.rmtree(prev_model_path)
@@ -139,28 +142,8 @@ def merge_models_and_save(model_path1, model_path2):
 
 current_directory = os.getcwd()
 
-
-
-def interface(input_text1, input_text2, blend_ratio_slider):  # Add the blend_ratio_slider parameter
-    global blend_ratio
-    blend_ratio = blend_ratio_slider  # Update the blend_ratio global variable
-    merge_models_and_save(input_text1, input_text2)
-    return "Success! Models have been LUNKed."
-
-iface = gr.Interface(
-    fn=interface,
-    inputs=[
-        gr.inputs.Dropdown(choices=os.listdir(current_directory), label="FIRST model directory"),
-        gr.inputs.Dropdown(choices=os.listdir(current_directory), label="SECOND model directory"),
-        gr.inputs.Slider(minimum=0, maximum=1, step=0.01, default=0.5, label="Blend Ratio")
-    ],
-    outputs="text",
-    title="LLUNK(Large Looping Universal Neural Kombiner)",
-    description="Select some models and mash them into a new one! Do this n times and pick the best one! So long as they're the same size and architecture..",
-)
-
-iface.launch()
-
+merge_models_and_save(path_to_model_1, path_to_model_2)
+print("Success! Models have been LLUNKed and saved to: " + current_directory + f". See converted_model_{num_times_to_lunk} for the final model")
 
 cmd = f"python main.py --model hf-causal-experimental \
 --model_args pretrained=EleutherAI/pythia-160m,revision=step100000 \
